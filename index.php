@@ -1,4 +1,3 @@
 <?php
-header("Location: home.php");
-exit();
+require __DIR__ . '/home.php';
 ?>

@@ -260,6 +260,7 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#214d37">
     <meta name="description" content="Shop quality agricultural tools, irrigation equipment and smart farming technology at Agrogear.">
+    <link rel="canonical" href="https://agrogear.onrender.com/index.php">
     <title>Agrogear | Built for the Modern Harvest</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
