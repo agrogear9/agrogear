@@ -1,6 +1,4 @@
 <?php
-require_once __DIR__ . '/order-pdf.php';
-
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -116,7 +114,6 @@ foreach (array_values($categoryDirectories) as $index => $categoryName) {
 $catalogById = array_column(array_merge($products, $catalogProducts), null, 'id');
 $deliveryFields = [
     'buyer_name' => '',
-    'buyer_email' => '',
     'buyer_phone' => '',
     'county' => '',
     'town' => '',
@@ -129,26 +126,17 @@ $deliveryFields = [
 $deliveryErrors = [];
 $deliveryMessage = '';
 $deliverySuccess = false;
+$deliveryMessageReady = false;
+$deliveryWhatsAppUrl = '';
+$deliveryEmailUrl = '';
 $deliveryPaymentCompleted = false;
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_SESSION['delivery_success_message'])) {
-    $deliverySuccess = true;
-    $deliveryMessage = $_SESSION['delivery_success_message'];
-    unset($_SESSION['delivery_success_message']);
-}
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_SESSION['delivery_form_flash'])) {
-    $formFlash = $_SESSION['delivery_form_flash'];
-    unset($_SESSION['delivery_form_flash']);
-    $deliveryFields = $formFlash['fields'];
-    $deliveryErrors = $formFlash['errors'];
-    $deliveryMessage = $formFlash['message'];
-    $deliveryPaymentCompleted = $formFlash['payment_completed'];
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'delivery_order') {
     foreach ($deliveryFields as $field => $defaultValue) {
         $value = $_POST[$field] ?? '';
         $deliveryFields[$field] = is_string($value) ? trim($value) : $defaultValue;
     }
+    $deliveryPaymentCompleted = ($_POST['payment_completed'] ?? '') === '1';
 
     $submittedToken = $_POST['csrf_token'] ?? '';
     if (!is_string($submittedToken) || !hash_equals($_SESSION['delivery_csrf_token'], $submittedToken)) {
@@ -161,12 +149,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'de
 
     if (mb_strlen($deliveryFields['buyer_name']) < 2 || mb_strlen($deliveryFields['buyer_name']) > 120) {
         $deliveryErrors[] = 'Enter your name (2 to 120 characters).';
-    }
-    if (
-        mb_strlen($deliveryFields['buyer_email']) > 254
-        || !filter_var($deliveryFields['buyer_email'], FILTER_VALIDATE_EMAIL)
-    ) {
-        $deliveryErrors[] = 'Enter a valid email address.';
     }
     if (!preg_match('/^\+?[0-9\s()-]{7,20}$/', $deliveryFields['buyer_phone'])) {
         $deliveryErrors[] = 'Enter a valid phone number.';
@@ -225,99 +207,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'de
 
     if ($deliveryErrors === []) {
         $orderNumber = 'AG-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
-
-        try {
-            $mailConfig = require __DIR__ . '/mail-config.php';
-        } catch (RuntimeException $exception) {
-            error_log('Agrogear mail configuration error: ' . $exception->getMessage());
-            $deliveryMessage = 'Order email is not configured yet. Please call or WhatsApp the store for delivery assistance.';
+        $orderMessageLines = [
+            'Hello Agrogear, I have completed payment and need delivery arranged.',
+            '',
+            'Order reference: ' . $orderNumber,
+            'Items:',
+        ];
+        foreach ($orderItems as $item) {
+            $orderMessageLines[] = '- ' . $item['name'] . ' x ' . $item['quantity']
+                . ' — KSh ' . number_format($item['line_total']);
+        }
+        $orderMessageLines = array_merge($orderMessageLines, [
+            'Total: KSh ' . number_format($orderTotal),
+            '',
+            'Buyer: ' . $deliveryFields['buyer_name'],
+            'Phone: ' . $deliveryFields['buyer_phone'],
+            'M-Pesa confirmation code: ' . $deliveryFields['mpesa_reference'],
+            '',
+            'Delivery address:',
+            'County: ' . $deliveryFields['county'],
+            'Town/area: ' . $deliveryFields['town'],
+            'Street/road: ' . $deliveryFields['street'],
+        ]);
+        foreach ([
+            'Estate/building' => $deliveryFields['estate_building'],
+            'Nearby landmark' => $deliveryFields['landmark'],
+            'Additional directions' => $deliveryFields['delivery_notes'],
+        ] as $label => $value) {
+            if ($value !== '') {
+                $orderMessageLines[] = $label . ': ' . $value;
+            }
         }
 
-        if (isset($mailConfig)) {
-            try {
-                $orderPdf = createAgrogearOrderPdf([
-                    'number' => $orderNumber,
-                    'date' => date('j F Y, g:i A'),
-                    'buyer_name' => $deliveryFields['buyer_name'],
-                    'buyer_email' => $deliveryFields['buyer_email'],
-                    'buyer_phone' => $deliveryFields['buyer_phone'],
-                    'mpesa_reference' => $deliveryFields['mpesa_reference'],
-                    'total' => $orderTotal,
-                    'county' => $deliveryFields['county'],
-                    'town' => $deliveryFields['town'],
-                    'street' => $deliveryFields['street'],
-                    'estate_building' => $deliveryFields['estate_building'],
-                    'landmark' => $deliveryFields['landmark'],
-                    'delivery_notes' => $deliveryFields['delivery_notes'],
-                    'items' => $orderItems,
-                ]);
-            } catch (RuntimeException $exception) {
-                error_log('Agrogear order PDF generation failed: ' . $exception->getMessage());
-                $deliveryMessage = 'We could not prepare the order PDF. Please call or WhatsApp the store for delivery assistance.';
-            }
-        }
-
-        if (isset($mailConfig, $orderPdf)) {
-            $orderEmailBody = 'Hello ' . $deliveryFields['buyer_name'] . ",\n\n"
-                . 'We have received your Agrogear order ' . $orderNumber . '.'
-                . "\nOrder total: KSh " . number_format($orderTotal)
-                . "\nPlease find your order details attached. The store will verify your M-Pesa payment manually."
-                . "\n\nAgrogear";
-            $buyerEmailSent = false;
-            $adminEmailSent = false;
-
-            try {
-                sendAgrogearEmail(
-                    $mailConfig,
-                    $deliveryFields['buyer_email'],
-                    'Agrogear order confirmation ' . $orderNumber,
-                    $orderEmailBody,
-                    $orderPdf
-                );
-                $buyerEmailSent = true;
-            } catch (RuntimeException $exception) {
-                error_log('Agrogear buyer email failed for ' . $orderNumber . ' to ' . $deliveryFields['buyer_email'] . ': ' . $exception->getMessage());
-            }
-
-            try {
-                sendAgrogearEmail(
-                    $mailConfig,
-                    $mailConfig['order_email'],
-                    'Agrogear delivery order ' . $orderNumber,
-                    $orderEmailBody,
-                    $orderPdf
-                );
-                $adminEmailSent = true;
-            } catch (RuntimeException $exception) {
-                error_log('Agrogear admin order email failed for ' . $orderNumber . ' to ' . $mailConfig['order_email'] . ': ' . $exception->getMessage());
-            }
-
-            if ($buyerEmailSent && $adminEmailSent) {
-                $deliverySuccess = true;
-                $deliveryMessage = 'Your order confirmation was submitted to the email address you entered, and a copy was submitted to the store. Check your inbox and spam folder for the confirmation.';
-                $_SESSION['delivery_csrf_token'] = bin2hex(random_bytes(32));
-                $_SESSION['delivery_success_message'] = $deliveryMessage;
-                header('Location: ' . $_SERVER['SCRIPT_NAME'] . '#delivery-details', true, 303);
-                exit;
-            }
-            if ($adminEmailSent) {
-                $deliveryMessage = 'The store received your order, but the buyer email could not be submitted to ' . $deliveryFields['buyer_email'] . '. Check the email address or contact us with order ' . $orderNumber . '.';
-            } elseif ($buyerEmailSent) {
-                $deliveryMessage = 'Your confirmation was submitted to ' . $deliveryFields['buyer_email'] . ', but the store could not be notified. Please contact us with order ' . $orderNumber . '.';
-            } else {
-                $deliveryMessage = 'Neither order email could be submitted. Please call or WhatsApp us with order ' . $orderNumber . '.';
-            }
-        }
+        $orderMessage = implode("\n", $orderMessageLines);
+        $deliverySuccess = true;
+        $deliveryMessageReady = true;
+        $deliveryMessage = 'Your delivery details are ready. Choose WhatsApp or email below and send the pre-filled message to Agrogear. The details are not sent until you send the message.';
+        $deliveryWhatsAppUrl = 'https://wa.me/254781998896?text=' . rawurlencode($orderMessage);
+        $deliveryEmailUrl = 'mailto:agrogear9@gmail.com?subject='
+            . rawurlencode('Agrogear delivery details')
+            . '&body=' . rawurlencode($orderMessage);
+        $_SESSION['delivery_csrf_token'] = bin2hex(random_bytes(32));
     }
-
-    $_SESSION['delivery_form_flash'] = [
-        'fields' => $deliveryFields,
-        'errors' => $deliveryErrors,
-        'message' => $deliveryMessage,
-        'payment_completed' => ($_POST['payment_completed'] ?? '') === '1',
-    ];
-    header('Location: ' . $_SERVER['SCRIPT_NAME'] . '#delivery-details', true, 303);
-    exit;
 }
 
 $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD10L JIADI Walking Diesel tractor (ksh 238,995).jpg');
@@ -436,12 +367,23 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
 
             <section class="delivery-section" id="delivery-details" aria-labelledby="delivery-heading">
                 <h2 class="section-heading" id="delivery-heading">Delivery Details</h2>
-                <p class="delivery-intro">After paying by M-Pesa, complete the form so we can arrange delivery. Enter your M-Pesa confirmation code and delivery address.</p>
+                <p class="delivery-intro">After paying by M-Pesa, complete the form and send your prepared order details to us by WhatsApp or email. Enter your M-Pesa confirmation code and delivery address.</p>
                 <aside class="delivery-estimate" role="note" aria-label="Delivery estimate">
                     <span class="delivery-estimate-icon" aria-hidden="true">3-5</span>
                     <span><strong>Delivery usually takes 3-5 days</strong><br>after payment and delivery details are received. Timing may vary depending on your location.</span>
                 </aside>
-                <div class="delivery-access-gate" id="delivery-access-gate">
+                <?php if ($deliverySuccess): ?>
+                    <div class="form-message form-message-success" role="status">
+                        <p><?= htmlspecialchars($deliveryMessage, ENT_QUOTES, 'UTF-8') ?></p>
+                        <div class="payment-contact-actions delivery-submit-actions">
+                            <a class="payment-contact-button payment-contact-button-whatsapp" href="<?= htmlspecialchars($deliveryWhatsAppUrl, ENT_QUOTES, 'UTF-8') ?>" target="_blank" rel="noopener noreferrer">Send order by WhatsApp</a>
+                            <a class="payment-contact-button" href="<?= htmlspecialchars($deliveryEmailUrl, ENT_QUOTES, 'UTF-8') ?>">Send order by email</a>
+                        </div>
+                        <p class="delivery-privacy">Your delivery details have not been sent until you send the message in WhatsApp or your email app.</p>
+                    </div>
+                <?php endif; ?>
+
+                <div class="delivery-access-gate" id="delivery-access-gate" <?= $deliverySuccess ? 'hidden' : '' ?>>
                     <h3>Get payment details first</h3>
                     <p>Call or WhatsApp us to confirm your order and receive payment details. Once you have them, continue to enter your delivery information.</p>
                     <div class="payment-contact-actions">
@@ -451,9 +393,7 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
                     <button class="delivery-form-button" id="delivery-access-button" type="button">I have received payment details</button>
                 </div>
 
-                <?php if ($deliverySuccess): ?>
-                    <p class="form-message form-message-success" role="status"><?= htmlspecialchars($deliveryMessage, ENT_QUOTES, 'UTF-8') ?></p>
-                <?php elseif ($deliveryMessage !== '' || $deliveryErrors !== []): ?>
+                <?php if (!$deliverySuccess && ($deliveryMessage !== '' || $deliveryErrors !== [])): ?>
                     <div class="form-message form-message-error" role="alert">
                         <?php if ($deliveryMessage !== ''): ?>
                             <p><?= htmlspecialchars($deliveryMessage, ENT_QUOTES, 'UTF-8') ?></p>
@@ -486,10 +426,6 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
                         <label class="form-field">
                             <span>Buyer full name *</span>
                             <input name="buyer_name" type="text" required minlength="2" maxlength="120" autocomplete="name" value="<?= htmlspecialchars($deliveryFields['buyer_name'], ENT_QUOTES, 'UTF-8') ?>">
-                        </label>
-                        <label class="form-field">
-                            <span>Email for order confirmation *</span>
-                            <input name="buyer_email" type="email" required maxlength="254" autocomplete="email" value="<?= htmlspecialchars($deliveryFields['buyer_email'], ENT_QUOTES, 'UTF-8') ?>">
                         </label>
                         <label class="form-field">
                             <span>Phone number *</span>
@@ -529,8 +465,8 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
                         <input type="checkbox" name="payment_completed" value="1" required <?= $deliveryPaymentCompleted ? 'checked' : '' ?>>
                         <span>I have completed the M-Pesa payment and entered the confirmation code above. I understand the store will verify the payment manually.</span>
                     </label>
-                    <button class="delivery-submit" id="delivery-submit" type="submit" disabled>Send delivery details</button>
-                    <p class="delivery-privacy">Your order and delivery details will be emailed to the store and the email address you provide.</p>
+                    <button class="delivery-submit" id="delivery-submit" type="submit" disabled>Prepare delivery message</button>
+                    <p class="delivery-privacy">Your details are not submitted automatically. After you submit this form, choose WhatsApp or email and send the prepared message to Agrogear.</p>
                 </form>
             </section>
 
@@ -634,7 +570,7 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script>
         const productCatalog = <?= json_encode(array_column(array_merge($products, $catalogProducts), null, 'id'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
-        const deliverySubmissionSuccessful = <?= json_encode($deliverySuccess) ?>;
+        const deliveryMessageReady = <?= json_encode($deliveryMessageReady) ?>;
         const cartCount = document.getElementById('cart-count');
         const cartButton = document.getElementById('cart-button');
         const cartDialog = document.getElementById('cart-dialog');
@@ -802,11 +738,16 @@ $tractorImage = productImage('2. Land Preparation & Tillage Machinery', '10HP JD
             });
         }
 
-        if (deliverySubmissionSuccessful) {
+        if (deliveryMessageReady) {
             try {
                 localStorage.removeItem('agrogear-cart');
             } catch (error) {
-                showToast('Order was emailed, but this browser could not clear the saved cart.');
+                showToast('Your delivery message is ready, but this browser could not clear the saved cart.');
+            }
+            try {
+                sessionStorage.removeItem(deliveryAccessKey);
+            } catch (error) {
+                showToast('Your delivery message is ready, but payment access could not be reset.');
             }
         } else {
             loadCart();

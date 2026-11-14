@@ -337,6 +337,8 @@
             margin: 12px 0;
         }
 
+        .delivery-submit-actions { margin-bottom: 0; }
+
         .payment-contact-button {
             display: inline-flex;
             min-height: 42px;
