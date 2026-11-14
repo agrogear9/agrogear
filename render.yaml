@@ -11,5 +11,3 @@ services:
         value: agrogear9@gmail.com
       - key: AGROGEAR_ORDER_EMAIL
         value: agrogear9@gmail.com
-      - key: AGROGEAR_GMAIL_APP_PASSWORD
-        sync: false

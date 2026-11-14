@@ -33,7 +33,8 @@ Payments are still verified manually by the store.
 
 The repository includes a Render Blueprint (`render.yaml`) and Dockerfile.
 In Render, create a new Blueprint and connect `agrogear9/agrogear`; Render will
-build the PHP/Apache image and prompt for `AGROGEAR_GMAIL_APP_PASSWORD`.
-Enter the App Password for `agrogear9@gmail.com` in Render's secret field.
-Never commit the App Password or add it to the Dockerfile. The service uses
-Render's free web-service plan, which may sleep when idle.
+build the PHP/Apache image. After deployment, add `AGROGEAR_GMAIL_APP_PASSWORD`
+to the service's Environment settings using the App Password for
+`agrogear9@gmail.com`, then save and redeploy. Never commit the App Password or
+add it to the Dockerfile. Order email will not work until this secret is set.
+The service uses Render's free web-service plan, which may sleep when idle.
