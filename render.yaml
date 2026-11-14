@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: agrogear
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: AGROGEAR_GMAIL_ADDRESS
+        value: agrogear9@gmail.com
+      - key: AGROGEAR_ORDER_EMAIL
+        value: agrogear9@gmail.com
+      - key: AGROGEAR_GMAIL_APP_PASSWORD
+        sync: false

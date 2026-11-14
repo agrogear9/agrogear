@@ -28,3 +28,12 @@ By default, the admin order copy is sent to `AGROGEAR_GMAIL_ADDRESS`; set the op
 
 The delivery form asks the buyer to provide the M-Pesa confirmation code.
 Payments are still verified manually by the store.
+
+## Deploying on Render
+
+The repository includes a Render Blueprint (`render.yaml`) and Dockerfile.
+In Render, create a new Blueprint and connect `agrogear9/agrogear`; Render will
+build the PHP/Apache image and prompt for `AGROGEAR_GMAIL_APP_PASSWORD`.
+Enter the App Password for `agrogear9@gmail.com` in Render's secret field.
+Never commit the App Password or add it to the Dockerfile. The service uses
+Render's free web-service plan, which may sleep when idle.
