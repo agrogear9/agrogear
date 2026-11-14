@@ -275,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'de
                     $orderPdf
                 );
                 $buyerEmailSent = true;
-            } catch (PHPMailer\PHPMailer\Exception $exception) {
+            } catch (RuntimeException $exception) {
                 error_log('Agrogear buyer email failed for ' . $orderNumber . ' to ' . $deliveryFields['buyer_email'] . ': ' . $exception->getMessage());
             }
 
@@ -288,7 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'de
                     $orderPdf
                 );
                 $adminEmailSent = true;
-            } catch (PHPMailer\PHPMailer\Exception $exception) {
+            } catch (RuntimeException $exception) {
                 error_log('Agrogear admin order email failed for ' . $orderNumber . ' to ' . $mailConfig['order_email'] . ': ' . $exception->getMessage());
             }
 

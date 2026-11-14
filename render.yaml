@@ -7,7 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /
     envVars:
-      - key: AGROGEAR_GMAIL_ADDRESS
+      - key: AGROGEAR_EMAIL_SENDER
         value: agrogear9@gmail.com
       - key: AGROGEAR_ORDER_EMAIL
         value: agrogear9@gmail.com

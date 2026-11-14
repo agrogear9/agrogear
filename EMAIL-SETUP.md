@@ -1,40 +1,34 @@
 # Agrogear order email setup
 
-Order email uses PHPMailer with Gmail SMTP. The sender account must have
-Google 2-Step Verification enabled and an App Password created for Agrogear.
-Do not use the account's normal Gmail password.
+Order email is sent through the Brevo transactional email API over HTTPS.
+Render's free web services block outbound SMTP ports, so Gmail SMTP and its
+App Password cannot be used from the free service.
 
-1. In the Google account that will send order email, enable 2-Step Verification
-   and create an App Password at `https://myaccount.google.com/apppasswords`.
-2. In Windows, open **Edit the system environment variables** and choose
-   **Environment Variables**.
-3. Add these user or system variables:
-   - `AGROGEAR_GMAIL_ADDRESS` = `agrogear9@gmail.com` (or the Gmail
-     account that owns the App Password)
-   - `AGROGEAR_GMAIL_APP_PASSWORD` = the 16-character App Password
-4. Restart Apache from the XAMPP Control Panel so it receives the variables.
-5. Install PHP dependencies from this directory if needed:
-   `composer install`
+1. Create a Brevo account and verify `agrogear9@gmail.com` as a sender. If
+   Brevo requires domain authentication for that address, use a sender address
+   on a domain you control and authenticate that domain with Brevo.
+2. Create a Brevo API key in the Brevo dashboard. Keep it secret.
+3. Configure these environment variables:
+   - `AGROGEAR_EMAIL_SENDER` = the sender address verified in Brevo
+   - `AGROGEAR_BREVO_API_KEY` = the Brevo API key
+   - `AGROGEAR_ORDER_EMAIL` = optional store inbox for admin order copies;
+     defaults to the sender address
+4. For local XAMPP, add the variables in Windows **Environment Variables**,
+   then restart Apache from the XAMPP Control Panel.
+5. For Render, add `AGROGEAR_BREVO_API_KEY` in the service's Environment
+   settings and save/redeploy. Do not put the key in `render.yaml`, PHP files,
+   or GitHub.
 
 The site sends separate order emails to the buyer and store, each with a
-formatted PDF attachment with the order items, total, buyer, delivery, and
-payment-reference details. The buyer's address is taken from the delivery form.
-If the store receives an order but the buyer does not, verify the address the
-buyer entered and check that inbox's Spam folder. A successful SMTP submission
-cannot guarantee delivery to the inbox. The App Password is read from the server
-environment and must not be added to PHP files or committed.
-By default, the admin order copy is sent to `AGROGEAR_GMAIL_ADDRESS`; set the optional
-`AGROGEAR_ORDER_EMAIL` environment variable to use a different admin inbox.
+formatted PDF attachment containing the order items, total, buyer, delivery,
+and payment-reference details. A successful API submission means Brevo
+accepted the message; it does not guarantee delivery to the inbox. Check the
+Brevo transactional email logs and the recipient's Spam folder if a message
+does not arrive.
 
 The delivery form asks the buyer to provide the M-Pesa confirmation code.
 Payments are still verified manually by the store.
 
-## Deploying on Render
-
-The repository includes a Render Blueprint (`render.yaml`) and Dockerfile.
-In Render, create a new Blueprint and connect `agrogear9/agrogear`; Render will
-build the PHP/Apache image. After deployment, add `AGROGEAR_GMAIL_APP_PASSWORD`
-to the service's Environment settings using the App Password for
-`agrogear9@gmail.com`, then save and redeploy. Never commit the App Password or
-add it to the Dockerfile. Order email will not work until this secret is set.
+The Render Blueprint (`render.yaml`) and Dockerfile build the PHP/Apache image.
 The service uses Render's free web-service plan, which may sleep when idle.
+See [Brevo's transactional email API documentation](https://developers.brevo.com/reference/send-transac-email).
